@@ -19,22 +19,26 @@ struct {
   byte IDX_RH_SPEED = 0;
   byte IDX_MAX_ITER = 0;
   unsigned short counter = 1;
-} test_package;
+} tp;
 
-byte zize = sizeof(test_package);
-byte buf[sizeof(test_package)] = {0};
+byte zize = sizeof(tp);
+byte buf[sizeof(tp)] = {0};
 
-#define RH_BUF_LEN sizeof(test_package)
+#define RH_BUF_LEN sizeof(tp)
 #define RH_ASK_MAX_MESSAGE_LEN RH_BUF_LEN
 RH_ASK driver(RH_SPEED[IDX_RH_SPEED], RX_PIN, TX_PIN);
 
-unsigned short prev_ID = 0;
-boolean doStart = false;
-unsigned long cnt_success = 0;
-unsigned long cnt_successes_total = 0;
-unsigned long cnt_total = 0;
-float total_err_rate = 0;
-float err_rate = 0;
+
+unsigned short cur_cnt = 0;
+unsigned short prev_cnt = 0;
+byte cnt_cur_successes = 0;
+byte cnt_cur_fails = 0;
+float cur_err_rate = 0.0;
+
+unsigned short cnt_tot_successes = 0;
+unsigned short cnt_tot_fails = 0;
+float tot_err_rate = 0.0;
+
 void setup()
 {
   pinMode(OLED_RESET, OUTPUT);
@@ -49,58 +53,70 @@ void setup()
   delay(50);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 }
-
+byte avg_cnt =0;
 void loop()
 {
 
   digitalWrite(RECV_LED, LOW);
   if (driver.recv(buf, &zize)) {
+    avg_cnt++;
+    if (avg_cnt > MAX_ITER[IDX_MAX_ITER]) {
+      avg_cnt = 1;
+      cnt_cur_successes = 0;
+      cnt_cur_fails = 0;
+    }
     digitalWrite(RECV_LED, HIGH);
     //driver.printBuffer("Received:", buf, zize); // raw data
-    memcpy(&test_package, buf, zize );
-    if (test_package.counter == 1)  {
-      doStart = true;
-    }
-    if (doStart) {
-      cnt_total++;
-      if (prev_ID != test_package.ID) { // new package
-        Serial.print("Successes: ");
-        Serial.print(cnt_success);
-        Serial.println("");
+    memcpy(&tp, buf, zize );
+    cur_cnt = tp.counter;
+    Serial.print("Prev: ");
+    Serial.print(prev_cnt);
+    Serial.print(" Current: ");
+    Serial.print(cur_cnt);
+    Serial.print(" Diff: ");
+    Serial.print(cur_cnt - prev_cnt);
+    Serial.println("");
 
-        Serial.print("Failures: ");
-        Serial.print(MAX_ITER[test_package.IDX_MAX_ITER] - cnt_success, DEC);
-        Serial.println("");
-
-        Serial.print("Error Rate: ");
-        err_rate = 100 * (1.0 - cnt_success / (float)MAX_ITER[test_package.IDX_MAX_ITER]);
-        Serial.print(err_rate, DEC);
-        Serial.println("");
-
-        cnt_successes_total += cnt_success;
-        Serial.print("Error Rate: ");
-        total_err_rate = 100 * (1.0 - cnt_successes_total / (float)cnt_total);
-        Serial.print(total_err_rate, DEC);
-        Serial.println("");
-
-        cnt_success = 0;
-      } else {
-        cnt_success++;
-      }
-      Serial.print("Package: ");
-      Serial.print(test_package.ID, DEC);
-      Serial.print(" @");
-      Serial.print(RH_SPEED[test_package.IDX_RH_SPEED]);
-      Serial.print(" ");
-      Serial.print(test_package.counter, DEC);
-      Serial.print("/");
-      Serial.print(MAX_ITER[test_package.IDX_MAX_ITER]);
+    if (cur_cnt - prev_cnt == 1) {
+      cnt_cur_successes++;
+      Serial.print("Successes: ");
+      Serial.print(cnt_cur_successes);
       Serial.println("");
-      displaydata();
     }
-    prev_ID = test_package.ID;
+    else {
+      if (prev_cnt != 0) {
+        cnt_cur_fails++;
+        Serial.print("Fails: ");
+        Serial.print(cnt_cur_fails);
+        Serial.println("");
+      }
+    }
+    if (cnt_cur_successes != 0)
+      cur_err_rate = 100 * (float)cnt_cur_fails / (float)(cnt_cur_fails + cnt_cur_successes);
+    Serial.print("Current ErrorRate: ");
+    Serial.print(cur_err_rate);
+    Serial.println("");
+
+
+    cnt_tot_successes += cnt_cur_successes;
+    cnt_tot_fails += cnt_cur_fails;
+    Serial.print("Total Successes: ");
+    Serial.print(cnt_tot_successes);
+    Serial.println("");
+    Serial.print("Total Fails: ");
+    Serial.print(cnt_tot_fails);
+    Serial.println("");
+    if (cnt_tot_successes != 0)
+      tot_err_rate = 100 * (float)cnt_tot_fails / (float)(cnt_tot_fails + cnt_tot_successes);
+    Serial.print("Total ErrorRate: ");
+    Serial.print(tot_err_rate);
+    Serial.println("");
+
+    prev_cnt = (tp.counter % 10);
   }
+  displaydata();
 }
+
 
 void displaydata() {
   display.clearDisplay();
@@ -109,12 +125,12 @@ void displaydata() {
 
   display.setCursor(0, 5);
   display.print("Cur ErrR:");
-  display.print(err_rate);
+  display.print(cur_err_rate);
   display.println("%");
 
   display.setCursor(0, 20);
   display.print("All ErrR:");
-  display.print(total_err_rate);
+  display.print(tot_err_rate);
   display.println("%");
   display.display();
 }
